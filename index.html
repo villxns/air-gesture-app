@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Air Gesture V1</title>
+  
+  <!-- Import Google's MediaPipe AI Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background-color: #121212; color: white; }
+    canvas { max-width: 100%; border: 3px solid #00ffcc; border-radius: 10px; margin-top: 20px; }
+    #status { font-size: 1.2rem; font-weight: bold; color: #00ffcc; }
+  </style>
+</head>
+<body>
+
+  <h1>Air Gesture Engine</h1>
+  <p id="status">Requesting camera permissions...</p>
+  
+  <!-- Hidden video element to capture the raw camera feed -->
+  <video id="videoElement" style="display:none;" autoplay playsinline></video>
+  
+  <!-- Canvas to display the video and draw the AI hand tracking points -->
+  <canvas id="canvasElement" width="640" height="480"></canvas>
+
+  <script>
+    const videoElement = document.getElementById('videoElement');
+    const canvasElement = document.getElementById('canvasElement');
+    const canvasCtx = canvasElement.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    // 1. Initialize the MediaPipe Hands AI Model
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    // Optimize settings for mobile phones (prioritize speed over pixel-perfect accuracy)
+    hands.setOptions({
+      maxNumHands: 1, // Only track one hand for now to save battery
+      modelComplexity: 0, // 0 is fastest, 1 is more accurate
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.7
+    });
+
+    // 2. Define what happens when the AI analyzes a frame
+    hands.onResults((results) => {
+      // Clear the previous frame
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      // Draw the live video feed onto the canvas
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      // If a hand is found on screen
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        statusText.innerText = "Hand Detected! 🖐️";
+        
+        const landmarks = results.multiHandLandmarks[0];
+        
+        // Loop through all 21 points on the hand and draw red dots
+        for (let i = 0; i < landmarks.length; i++) {
+          const x = landmarks[i].x * canvasElement.width;
+          const y = landmarks[i].y * canvasElement.height;
+          
+          canvasCtx.beginPath();
+          canvasCtx.arc(x, y, 5, 0, 2 * Math.PI);
+          canvasCtx.fillStyle = "red";
+          canvasCtx.fill();
+        }
+        
+        // ** WE WILL WRITE OUR GESTURE MATH (SWIPE/PINCH) HERE LATER **
+      } else {
+        statusText.innerText = "Waiting for a hand...";
+      }
+    });
+
+    // 3. Connect the webcam to the AI model
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    
+    // Start the engine
+    camera.start().then(() => {
+      statusText.innerText = "Camera Active. Show your hand!";
+    }).catch((err) => {
+      statusText.innerText = "Error accessing camera. Check permissions.";
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
