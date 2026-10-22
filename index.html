@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Air Gesture V3</title>
+  <title>Air Gesture V5</title>
   
   <!-- Import Google's MediaPipe AI Libraries -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -32,12 +32,16 @@
   <!-- THIS IS THE FLOATING VIRTUAL CURSOR -->
   <div id="virtual-cursor" style="position: fixed; width: 25px; height: 25px; background-color: #00ffcc; border-radius: 50%; pointer-events: none; display: none; z-index: 9999; box-shadow: 0 0 15px #00ffcc; transform: translate(-50%, -50%); transition: transform 0.1s, background-color 0.1s;"></div>
 
+  <!-- TARGET BUTTON TO CLICK -->
+  <button id="magicButton" style="position: absolute; top: 75%; left: 50%; transform: translate(-50%, -50%); padding: 20px 40px; font-size: 24px; font-weight: bold; background-color: #222; color: white; border: 3px solid #00ffcc; border-radius: 10px; z-index: 100;">Air Click Me!</button>
+
   <script>
     const videoElement = document.getElementById('videoElement');
     const canvasElement = document.getElementById('canvasElement');
     const canvasCtx = canvasElement.getContext('2d');
     const statusText = document.getElementById('status');
     const cursorElement = document.getElementById('virtual-cursor');
+    const button = document.getElementById('magicButton');
 
     // 1. Initialize the MediaPipe Hands AI Model
     const hands = new Hands({locateFile: (file) => {
@@ -64,4 +68,92 @@
         
         // A. Loop through EVERY hand detected and draw the dots
         for (let handIndex = 0; handIndex < results.multiHandLandmarks.length; handIndex++) {
-          const landmarks = results
+          const landmarks = results.multiHandLandmarks[handIndex];
+          for (let i = 0; i < landmarks.length; i++) {
+            const x = landmarks[i].x * canvasElement.width;
+            const y = landmarks[i].y * canvasElement.height;
+            
+            canvasCtx.beginPath();
+            canvasCtx.arc(x, y, 5, 0, 2 * Math.PI);
+            canvasCtx.fillStyle = "red";
+            canvasCtx.fill();
+          }
+        }
+
+        // B. Virtual Cursor & Air Click Math (Using the primary hand)
+        const primaryHand = results.multiHandLandmarks[0];
+        const thumbTip = primaryHand[4];
+        const indexTip = primaryHand[8];
+        
+        // Make sure the cursor is visible
+        cursorElement.style.display = "block";
+
+        // Map the AI coordinates (0.0 to 1.0) to your phone's actual screen pixels
+        // We use (1 - X) because the front camera acts like a mirror!
+        const screenX = (1 - indexTip.x) * window.innerWidth;
+        const screenY = indexTip.y * window.innerHeight;
+
+        cursorElement.style.left = `${screenX}px`;
+        cursorElement.style.top = `${screenY}px`;
+
+        // Calculate distance between thumb and index finger for the Pinch
+        const distance = Math.sqrt(
+          Math.pow(thumbTip.x - indexTip.x, 2) + 
+          Math.pow(thumbTip.y - indexTip.y, 2)
+        );
+
+        // Get the button's exact position on the screen
+        const buttonRect = button.getBoundingClientRect();
+
+        // If fingers are touching (Air Click)
+        if (distance < 0.05) {
+          statusText.innerText = "🤏 AIR CLICK!";
+          cursorElement.style.backgroundColor = "#ff0044"; 
+          cursorElement.style.transform = "scale(1.5) translate(-33%, -33%)"; 
+          
+          // --- COLLISION DETECTION ---
+          // Check if cursor X and Y are inside the button's borders
+          if (screenX > buttonRect.left && screenX < buttonRect.right && 
+              screenY > buttonRect.top && screenY < buttonRect.bottom) {
+              
+              button.style.backgroundColor = "#00ffcc";
+              button.style.color = "black";
+              button.innerText = "TARGET HIT! 🎯";
+          }
+        } else {
+          statusText.innerText = "Hands Detected! 🖐️ (Move to steer, Pinch to click)";
+          cursorElement.style.backgroundColor = "#00ffcc"; 
+          cursorElement.style.transform = "scale(1) translate(-50%, -50%)"; 
+          
+          // Reset button when you let go of the pinch
+          button.style.backgroundColor = "#222";
+          button.style.color = "white";
+          button.innerText = "Air Click Me!";
+        }
+        
+      } else {
+        // No hands on screen
+        statusText.innerText = "Waiting for hands...";
+        cursorElement.style.display = "none"; // Hide cursor when hands are out of frame
+      }
+    });
+
+    // 3. Connect the webcam to the AI model
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    
+    // Start the engine
+    camera.start().then(() => {
+      statusText.innerText = "Camera Active. Show your hands!";
+    }).catch((err) => {
+      statusText.innerText = "Error accessing camera. Check permissions.";
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
